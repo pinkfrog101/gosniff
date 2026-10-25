@@ -34,7 +34,7 @@ func main() {
 	case *file != "":
 		handle, err = pcap.OpenOffline(*file)
 	case *iface != "":
-		handle, err = pcap.OpenLive(*iface, 1600, false, time.Second) // false = not promiscuous
+		handle, err = pcap.OpenLive(*iface, 1600, false, time.Second)
 	default:
 		log.Fatal("usage: gosniff -i <interface> | -r <file.pcap> | -list")
 	}
@@ -53,9 +53,10 @@ func main() {
 	n := 0
 	for packet := range source.Packets() {
 		n++
-		fmt.Printf("#%d  %s  %s\n",
-			n,
-			packet.Metadata().Timestamp.Format("15:04:05.000"),
-			decode.Describe(packet.Data()))
+		p := decode.Decode(packet.Data())
+		p.Number = n
+		p.Time = packet.Metadata().Timestamp
+		p.Length = packet.Metadata().Length
+		fmt.Println(p.Summary())
 	}
 }

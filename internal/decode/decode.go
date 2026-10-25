@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 	"strings"
+
+	"gosniff/internal/model"
 )
 
 const (
@@ -121,41 +123,63 @@ func ParseUDP(b []byte) (UDP, []byte, error) {
 	}, b[8:], nil
 }
 
-func Describe(data []byte) string {
+func Decode(data []byte) model.Packet {
+	p := model.Packet{Length: len(data), Raw: data}
+
 	eth, l3, err := ParseEthernet(data)
 	if err != nil {
-		return "malformed: " + err.Error()
+		p.Protocol, p.Info = "ERR", err.Error()
+		return p
 	}
+	p.SrcAddr = eth.Src.String()
+	p.DstAddr = eth.Dst.String()
 
 	switch eth.EtherType {
 	case EtherTypeIPv4:
-		ip, l4, err := ParseIPv4(l3)
-		if err != nil {
-			return "malformed: " + err.Error()
-		}
-		switch ip.Protocol {
-		case ProtoTCP:
-			tcp, _, err := ParseTCP(l4)
-			if err != nil {
-				return "malformed: " + err.Error()
-			}
-			return fmt.Sprintf("TCP  %s:%d -> %s:%d [%s]",
-				ip.Src, tcp.SrcPort, ip.Dst, tcp.DstPort, tcp.FlagString())
-		case ProtoUDP:
-			udp, _, err := ParseUDP(l4)
-			if err != nil {
-				return "malformed: " + err.Error()
-			}
-			return fmt.Sprintf("UDP  %s:%d -> %s:%d len=%d",
-				ip.Src, udp.SrcPort, ip.Dst, udp.DstPort, udp.Length)
-		default:
-			return fmt.Sprintf("IPv4 %s -> %s proto=%d", ip.Src, ip.Dst, ip.Protocol)
-		}
+		decodeIPv4(&p, l3)
 	case EtherTypeARP:
-		return "ARP"
+		p.Protocol = "ARP"
 	case EtherTypeIPv6:
-		return "IPv6 (not decoded yet)"
+		p.Protocol, p.Info = "IPv6", "not decoded yet"
 	default:
-		return fmt.Sprintf("EtherType 0x%04x", eth.EtherType)
+		p.Protocol = "ETH"
+		p.Info = fmt.Sprintf("EtherType 0x%04x", eth.EtherType)
+	}
+	return p
+}
+
+func decodeIPv4(p *model.Packet, b []byte) {
+	ip, l4, err := ParseIPv4(b)
+	if err != nil {
+		p.Protocol, p.Info = "ERR", err.Error()
+		return
+	}
+	p.SrcAddr, p.DstAddr = ip.Src.String(), ip.Dst.String()
+
+	switch ip.Protocol {
+	case ProtoTCP:
+		tcp, _, err := ParseTCP(l4)
+		if err != nil {
+			p.Protocol, p.Info = "ERR", err.Error()
+			return
+		}
+		p.Protocol = "TCP"
+		p.SrcPort, p.DstPort = tcp.SrcPort, tcp.DstPort
+		p.Info = fmt.Sprintf("%d -> %d [%s] seq=%d ack=%d",
+			tcp.SrcPort, tcp.DstPort, tcp.FlagString(), tcp.Seq, tcp.Ack)
+	case ProtoUDP:
+		udp, _, err := ParseUDP(l4)
+		if err != nil {
+			p.Protocol, p.Info = "ERR", err.Error()
+			return
+		}
+		p.Protocol = "UDP"
+		p.SrcPort, p.DstPort = udp.SrcPort, udp.DstPort
+		p.Info = fmt.Sprintf("%d -> %d len=%d", udp.SrcPort, udp.DstPort, udp.Length)
+	case ProtoICMP:
+		p.Protocol = "ICMP"
+	default:
+		p.Protocol = "IPv4"
+		p.Info = fmt.Sprintf("protocol %d", ip.Protocol)
 	}
 }
