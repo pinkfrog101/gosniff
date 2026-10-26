@@ -182,3 +182,52 @@ func TestDecodeGarbage(t *testing.T) {
 		t.Errorf("protocol = %q, want ERR", p.Protocol)
 	}
 }
+func TestParseIPv6(t *testing.T) {
+	b := make([]byte, 44)
+	b[0] = 0x60
+	b[5] = 4
+	b[6] = ProtoUDP
+	b[7] = 64
+	b[8+15] = 1
+	b[24+15] = 2
+
+	ip, rest, err := ParseIPv6(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ip.NextHeader != ProtoUDP || ip.HopLimit != 64 {
+		t.Errorf("got next=%d hop=%d", ip.NextHeader, ip.HopLimit)
+	}
+	if ip.Src.String() != "::1" || ip.Dst.String() != "::2" {
+		t.Errorf("got %s -> %s", ip.Src, ip.Dst)
+	}
+	if len(rest) != 4 {
+		t.Errorf("payload len = %d, want 4", len(rest))
+	}
+}
+
+func TestParseIPv6SkipsExtensionHeader(t *testing.T) {
+	b := make([]byte, 40+8+4)
+	b[0] = 0x60
+	b[5] = 12
+	b[6] = 0
+	b[40] = ProtoICMPv6
+	b[41] = 0
+
+	ip, rest, err := ParseIPv6(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ip.NextHeader != ProtoICMPv6 {
+		t.Errorf("next header = %d, want %d", ip.NextHeader, ProtoICMPv6)
+	}
+	if len(rest) != 4 {
+		t.Errorf("payload len = %d, want 4", len(rest))
+	}
+}
+
+func TestParseIPv6TooShort(t *testing.T) {
+	if _, _, err := ParseIPv6(make([]byte, 30)); err == nil {
+		t.Error("expected error for short input")
+	}
+}

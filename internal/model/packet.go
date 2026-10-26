@@ -32,7 +32,7 @@ func endpoint(addr string, port uint16) string {
 }
 
 func (p Packet) Summary() string {
-	return fmt.Sprintf("%-5d %s  %-22s -> %-22s %-5s %5d  %s",
+	return fmt.Sprintf("%-5d %s  %-42s -> %-42s %-5s %5d  %s",
 		p.Number,
 		p.Time.Format("15:04:05.000"),
 		p.Source(),
